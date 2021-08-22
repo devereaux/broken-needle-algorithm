@@ -35,14 +35,15 @@ needlesgeo= {
 }
 
 # The vanilla input
-haystackeasy0="NEW ORLEANS,ORLEANS,NEW YORK,NEW YORK CITY,YORKTOWN,NEW YORKTOWN,YORK,WALES,SOUTH WALES,NEW SOUTH WALES,SYDNEY,AUSTRALIA,AUSTRIA"
+haystackgeo1="NEW ORLEANS,ORLEANS,NEW YORK,NEW YORK CITY,YORKTOWN,NEW YORKTOWN,YORK,WALES,SOUTH WALES,NEW SOUTH WALES,SYDNEY,AUSTRALIA,AUSTRIA"
 # Oops, all spaces became commas
-haystackhard1="NEW,ORLEANS,ORLEANS,NEW,YORK,NEW,YORK,CITY,YORKTOWN,NEW,YORKTOWN,YORK,WALES,SOUTH,WALES,NEW,SOUTH,WALES,SYDNEY,AUSTRALIA,AUSTRIA"
+haystackgeo2="NEW,ORLEANS,ORLEANS,NEW,YORK,NEW,YORK,CITY,YORKTOWN,NEW,YORKTOWN,YORK,WALES,SOUTH,WALES,NEW,SOUTH,WALES,SYDNEY,AUSTRALIA,AUSTRIA"
 # Oops, now it has also become almost fully quoted: the hay is "','"
 # even worse, it's littered with various amounts of periods ".", exclamations "!", stars "*" and tildes "~" that break the sequence here and there
-haystackhard2="'NEW','ORLEANS...ORLEANS','NEW','YORK','NEW','YORK!!!!CITY','YORKTOWN','NEW*YORKTOWN','YORK!!!!WALES','SOUTH~~~WALES','NEW','SOUTH~WALES','SYDNEY','AUSTRALIA','AUSTRIA'"
+haystackgeo3="'NEW','ORLEANS...ORLEANS','NEW','YORK','NEW','YORK!!!!CITY','YORKTOWN','NEW*YORKTOWN','YORK!!!!WALES','SOUTH~~~WALES','NEW','SOUTH~WALES','SYDNEY','AUSTRALIA','AUSTRIA'"
 
-# Let's try to fully recover that sequence
+
+# Let's try to fully recover the sequences
 
 # tolerance factor for broken needle distance between pieces:
 # <= 4 to allow the 3 chars of ','
@@ -202,19 +203,22 @@ def brokenneedlealgorithm(needles, haystack):
                 print(str("when broken, length of needle=") + str(len(brokenneedle)))
             for piece in brokenneedle:
                 if tryagainwhere > 0:
+                    # All the comparisons are case insensitive ; the simplest way to do that
+                    # is to compare both after converting each to lowercase!
+                    # Also, in case the needle case matters (ex: CamelCase), this restores it into the haystack
                     if p ==0:
-                        piecestartpos = haystack.find(piece, tryagainwhere)
+                        piecestartpos = haystack.lower().find(piece.lower(), tryagainwhere)
                     else:
                         # tryagainwhere should not replace where the previous piece was found
                         # it's just a floor, if the previous piece is above it, use it:
                         previouspiecestartpos=piecesfound[p-1][0]
-                        piecestartpos = haystack.find(piece, max(previouspiecestartpos,tryagainwhere))
+                        piecestartpos = haystack.lower().find(piece.lower(), max(previouspiecestartpos,tryagainwhere))
                 else:
                     if p==0:
-                        piecestartpos = haystack.find(piece)
+                        piecestartpos = haystack.lower().find(piece.lower())
                     else:
                         previouspiecestartpos = piecesfound[p-1][0]
-                        piecestartpos = haystack.find(piece, previouspiecestartpos)
+                        piecestartpos = haystack.lower().find(piece.lower(), previouspiecestartpos)
 
                 # later also taken as the tempory end of the needle, until we have found all of its pieces
                 piecestoppos = piecestartpos + len(piece) - 1
@@ -358,7 +362,7 @@ def brokenneedlealgorithm(needles, haystack):
                 # stricly inferior: no size 0 needle!
                 assert needlestartpos<needlestoppos
 
-                # FIXME: there should be a more precise accounting of the hay
+                # TODO: there should be a more precise accounting of the hay
                 #
                 # until then, estimate to min(1,somehay times the number of pieces)
                 somehay=2
@@ -443,7 +447,7 @@ def brokenneedlealgorithm(needles, haystack):
                 nextpiecepos = 0
                 nextpieceorder= []
                 for nextpiece in brokenneedle:
-                    nextpiecepos = haystack.find(nextpiece, piecestoppos + 1)
+                    nextpiecepos = haystack.lower().find(nextpiece.lower(), piecestoppos + 1)
                     # if there are all the pieces, worth trying again!
                     # But check if they are in order: sorted wont affect a strictly increasing list
                     nextpieceorder.append(nextpiecepos)
@@ -503,7 +507,6 @@ def brokenneedlealgorithm(needles, haystack):
 # input dict will be ordered:
 
 from collections import OrderedDict
-
 
 def naiverefineneedles(subsettingneedles):
     # shortest first
@@ -612,14 +615,188 @@ def naiverefineneedles(subsettingneedles):
 # and WALES, SOUTH WALES, NEW SOUTH WALES)
 
 
+
+# Takes as an input needles and a haystack, computes the refined needles,
+# then applies these to the haystack by doing a replace-in-position
+# which does not depends on any regex and is thus less risky
+# Returns the recovered haystack, and the encoded haystack
+# where needles are replaced by their codes and an optional separator
+
+def brokenneedleapply(dictin, haystackin, separator_start, separator_stop):
+
+    needles, needlesalternatives = brokenneedlealgorithm(dictin, haystackin)
+    needlesrefined = naiverefineneedles(needles)
+
+    # initialize
+    recovered=haystackin
+    needlesrefinedcopy=needlesrefined
+
+    # To keep track of needles already processed and not update their position, another dict
+    # only useful for debug purposes to avoid displaying an offset update that won't be used
+    needlesdone={}
+
+    if debug>1:
+        print("Needles refined:")
+        print(needlesrefined)
+
+    if debug>2:
+        print("Needles:")
+        print(needles)
+        print("Needles alternatives:")
+        print(needlesalternatives)
+
+    for n in needlesrefined.keys():
+        if debug>2:
+            print("Needle is '" + str(n) + "'")
+
+        # FIXME: We assume a needle can only be present once.
+        # So fail, as this algorithm will need improvements to tolerate more offsets than one
+        if len(needlesrefined[n]) !=1:
+            print ("cardinality error on "  + str(n) + " found at " + str(needlesrefined[n]))
+            exit(1)
+        else:
+            [[sstart, slen, sstop]] = needlesrefined[n]
+
+        nstart=int(sstart)
+        nlen=int(slen)
+        nstop=int(sstop)
+
+        # Applying the needle means replacing a piece of text by another.
+        # It needs to take into account the size difference:
+        # Doing even one replacement may change the offsets of all subsequent needles
+        # So we compute the delta to alter them:
+        delta = len(n) - 1 -nstop +nstart
+        # We truncate to before, apply the string, truncate what's after, and glue it together
+        replaced= recovered[:nstart] +  str(n) + recovered[nstop+1:]
+
+        if debug>2:
+            print ("Delta=" + str(delta) +": len(n)=" +str(len(n)) + " -1 -nstop=" +str(nstop) + "+nstart=" + str(nstart) + "\n")
+            print("Gluing with delta=" +str(delta) + ":\n>" + str(recovered[:nstart]) + "<+>" + str(n) + "<+>" + str(recovered[nstop+1:]) +"\n")
+            print('replaced=' +str(replaced))
+
+        # For non zero delta, update the needles.
+        # Making a for loop within another for loop is NOT EFFICIENT: O(n^2), quadratic!
+        # HOWEVER it's easier to understand and maintain, and the performance loss may be acceptable
+        # since the number of refined needles will be very limited
+        if delta != 0:
+            if debug>2:
+                print("Tweaking needles position")
+            for m in needlesrefined.keys():
+                # this needlesdone is not really needed, except for debug purposes
+                if not n == m and not m in needlesdone.keys():
+                    [[tstart, tlen, tstop]] = needlesrefined[m]
+                    mstart = int(tstart)
+                    mlen = int(tlen)
+                    mstop = int(tstop)
+                    # For any other needle starting after the current one, update its offsets
+                    #if mstart > nstop:
+                    # But the stop of the needle can become less that nstop due to the delta!
+                    #if (mstart > nstart + len(n)):
+                    # HOWEVER, this doesn't matter: all that does is the start point!
+                    if mstart>nstart:
+                        if debug>2:
+                            print('needle ' + str(m) + ' was:' + str(needlesrefined[m]))
+                        mstartnew=mstart+delta
+                        mstopnew=mstop+delta
+                        mnew = [str(mstartnew), str(mlen),str(mstopnew)]
+                        needlesrefined[m]=[mnew]
+                        if debug>2:
+                            print('needle ' + str(m) + ' now:' + str(needlesrefined[m]))
+        # Apply the update for the next loop
+        recovered=replaced
+        # And mark the needle as processed so that we won't tweak (or show that we're tweaking) its offset
+        # Even if it wouldn't have practical consequences, it makes debugging easier
+        needlesdone[n]= needlesrefined[n]
+
+    # Now comes the encoding step, where we use the needle code
+    if debug>2:
+        print ("####################################\nNow encoding\n####################################\n")
+
+    # restore the haystack, as we did some replacements
+    encoded=haystackin
+    # restore the needles, as we did some tweaking on their positions
+    needlesrefined=needlesrefinedcopy
+    # restore the needles done, to help with debugging
+    needlesdone={}
+
+    # Exactly as above, except:
+    #  - nn (dictin[n] surrounded by the separator) replaces n in delta and replaced,
+    #  - the delta computation is different to take that code into account
+    for n in needlesrefined.keys():
+        [[sstart, slen, sstop ]] =needlesrefined[n]
+        nstart=int(sstart)
+        nlen=int(slen)
+        nstop=int(sstop)
+
+        # Applying the needle means replacing a piece of text by another, surrounded by separators
+        nn = str(separator_start) + str(dictin[n]) + str(separator_stop)
+
+        # It needs to take into account the size difference:
+        # Doing even one replacement may change the offsets of all subsequent needles
+        # So we compute the delta, as before would be delta1:
+        #delta1=  nlen - 1 +nstart -nstop
+        # Except it would need to take into account delta 2:
+        #delta2 = len(str(nn)) - 1 - nstop + nstart
+        # NEW','ORLEANS : haystack
+        # NEW ORLEANS   : delta1=-2  (between haystack and needle)
+        # 01              delta2=-9  (between needle and encoded needle)
+        #   123456789AB : delta =-11 (between haystack and encoded needle
+        # delta=delta2-delta1
+        # So we use directly the difference between the 2 entries:
+        delta= len(nn) -nlen
+
+        # We truncate to before, apply the string, truncate what's after, and glue it together
+        # Just as before, but nn instead of n
+        replaced= encoded[:nstart] + str(nn) + encoded[nstop+1:]
+
+        if debug>2:
+            print("Needle is '" + str(n) + "' when encoded is '" +str(separator_start) + str(dictin[n]) + str(separator_stop) + "', at nstart=" +str(nstart) + "\n")
+            print("Delta=" + str(delta) +": len(nn)=" +str(len(nn)) + " -nlen=" +str(nlen) + "\n")
+            print("Gluing encoded with delta=" +str(delta) + ":\n>" + str(encoded[:nstart]) + "<+>" + str(nn) + "<+>" + str(encoded[nstop+1:]) +"\n")
+            print("replaced encoded =" +str(replaced))
+
+        if delta != 0:
+            if debug>2:
+                print("Tweaking encoded needles position if needed")
+            for m in needlesrefined.keys():
+                if not n == m and not m in needlesdone.keys():
+                    [[tstart, tlen, tstop]] = needlesrefined[m]
+                    mstart = int(tstart)
+                    mlen = int(tlen)
+                    mstop = int(tstop)
+                    # For any other needle starting after the current one, update its offsets,
+                    # all that matters is the start position of each needle:
+                    if mstart>nstart:
+                        mstartnew=mstart+delta
+                        mstopnew=mstop+delta
+                        mnew = [str(mstartnew), str(mlen), str(mstopnew)]
+
+                        if debug > 2:
+                            print (str((mstart > nstart + len(dictin[n]))))
+                            print('needle encoded ' + str(m) + ' was:' + str(needlesrefined[m]))
+                            print('needle encoded ' + str(m) + ' now:' + str(mnew))
+
+                        needlesrefined[m]=[mnew]
+
+        # Apply the update for the next loop
+        encoded=replaced
+
+        # Add to the needles dones
+        needlesdone[n]=needlesrefined[n]
+
+        if debug > 2:
+            print('needles done ' + str(needlesdone[n]))
+
+    return (recovered,encoded)
+
 print("Distance tolerance for pieces:")
 print(piecedistancetolerance)
 print("Size required for pieces:")
 print(piecesizerequirement)
 
-f1, a1 = brokenneedlealgorithm(needlesgeo, haystackhard1)
+f1, a1 = brokenneedlealgorithm(needlesgeo, haystackgeo1)
 print("Haystack used:")
-print(haystackhard1)
+print(haystackgeo1)
 print("Needles found, with subsets:")
 print(f1)
 f1copy=f1.copy()
@@ -631,16 +808,22 @@ if debug>2:
     print("Remember: subsetting needles found:")
     print(f1copy)
 
-print("Recovered haystack")
-recover1=haystackhard1
+print("Recovered haystack:")
+recover1=haystackgeo1
 for n in g1.keys():
-    [[nstart, _, nstop ]] = g1[n]
-    replaced= recover1[:int(nstart)] + str(n) + recover1[int(nstop)+1:]
+    [[sstart, slen, sstop ]] =g1[n]
+    nstart=int(sstart)
+    nlen=int(slen)
+    nstop=int(sstop)
+    # need to append spaces at the beginning in case the length differs
+    delta= nstop -nstart -nlen +1
+    replaced= delta*' ' + recover1[:nstart] + str(n) + recover1[nstop+1:]
     recover1=replaced
 print(recover1)
 
-print ("Encoded haystack")
-encoded1=haystackhard1
+print ("Encoded haystack:")
+# the delta is why we use recover
+encoded1=recover1
 for n in g1.keys():
     [[nstart, nlen, nstop ]] = g1[n]
     value=needlesgeo[n]
@@ -650,10 +833,11 @@ for n in g1.keys():
 print(encoded1)
 print ("Without spaces:")
 print(" ".join(encoded1.split()))
+
 print ("------------------------------")
-f2, a2 = brokenneedlealgorithm(needlesgeo, haystackhard2)
+f2, a2 = brokenneedlealgorithm(needlesgeo, haystackgeo2)
 print("Haystack used:")
-print(haystackhard2)
+print(haystackgeo2)
 print("Needles found, with subsets:")
 print(f2)
 f2copy=f2.copy()
@@ -664,7 +848,7 @@ if debug>2:
     print("Remember: subsetting needles found:")
     print(f2copy)
 
-# Only useful for haystackhard2
+# Manual recovery of the haystack
 if debug > 0:
     a=a2
     print("Alternatives per pos:")
@@ -685,3 +869,102 @@ if debug > 0:
                 l = l + 1
         j = j + 1
 
+print("Recovered haystack:")
+recover2=haystackgeo2
+for n in g2.keys():
+    [[sstart, slen, sstop ]] =g2[n]
+    nstart=int(sstart)
+    nlen=int(slen)
+    nstop=int(sstop)
+    # need to append spaces at the beginning in case the length differs
+    delta= nstop -nstart -nlen +1
+    replaced= delta*' ' + recover2[:nstart] + str(n) + recover2[nstop+1:]
+    recover2=replaced
+print(recover2)
+
+print ("Encoded haystack:")
+# the delta is why we use recover
+encoded2=recover2
+for n in g2.keys():
+    [[nstart, nlen, nstop ]] = g2[n]
+    value=needlesgeo[n]
+    leftpaddedvalue=value.rjust(int(nlen), " ")
+    replaced= encoded2[:int(nstart)] + str(leftpaddedvalue) + recover2[int(nstop)+1:]
+    encoded2=replaced
+print(encoded2)
+print ("Without spaces:")
+print(" ".join(encoded2.split()))
+
+print ("Using the apply function:")
+haystackrecovered2,haystackencoded2=brokenneedleapply(needlesgeo,haystackgeo2,"{", "}")
+print(haystackrecovered2)
+print(haystackencoded2)
+
+print ("------------------------------")
+f3, a3 = brokenneedlealgorithm(needlesgeo, haystackgeo3)
+print("Haystack used:")
+print(haystackgeo3)
+print("Needles found, with subsets:")
+print(f3)
+f3copy=f3.copy()
+g3 = naiverefineneedles(f3)
+print("Non subsetting neddles (naive approach):")
+print(g3)
+if debug>2:
+    print("Remember: subsetting needles found:")
+    print(f3copy)
+
+# Manual recovery
+if debug > 0:
+    a=a3
+    print("Alternatives per pos:")
+    print(a)
+    i = len(a)
+    print("Detail per position from 0 to " + str(i))
+    j = 0
+    while j < i:
+        print("@ " + str(j))
+        if a[j] is None:
+            print("None")
+            # next
+        else:
+            k = len(a[j])
+            l = 0
+            while l < k:
+                print(a[j][l])
+                l = l + 1
+        j = j + 1
+
+print("Recovered haystack:")
+recover3=haystackgeo3
+for n in g3.keys():
+    [[sstart, slen, sstop ]] =g3[n]
+    nstart=int(sstart)
+    nlen=int(slen)
+    nstop=int(sstop)
+    # need to append spaces at the beginning in case the length differs
+    delta= nstop -nstart -nlen +1
+    replaced= recover3[:nstart] + delta*' ' +  str(n) + recover3[nstop+1:]
+    recover3=replaced
+print(recover3)
+
+# the delta is why we use recover
+encoded3=recover3
+print ("Encoded haystack:")
+for n in g3.keys():
+    [[sstart, slen, sstop ]] =g3[n]
+    nstart=int(sstart)
+    nlen=int(slen)
+    nstop=int(sstop)
+    value=needlesgeo[n]
+    leftpaddedvalue=value.rjust(nstop-nstart+1, " ")
+    replaced= encoded3[:int(nstart)] + str(leftpaddedvalue) + recover3[int(nstop)+1:]
+    encoded3=replaced
+print(encoded3)
+print ("Without spaces:")
+print(" ".join(encoded3.split()))
+
+print ("Using the apply function:")
+haystackrecovered3,haystackencoded3=brokenneedleapply(needlesgeo,haystackgeo3,"{", "}")
+print(haystackrecovered3)
+print(haystackencoded3)
